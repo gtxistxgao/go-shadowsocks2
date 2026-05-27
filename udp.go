@@ -140,6 +140,7 @@ func udpRemote(addr string, shadow func(net.PacketConn) net.PacketConn) {
 			continue
 		}
 
+		recordUDPReceived(int64(n))
 		tgtAddr := socks.SplitAddr(buf[:n])
 		if tgtAddr == nil {
 			logf("failed to split target address from packet: %q", buf[:n])
@@ -240,6 +241,7 @@ func timedCopy(dst net.PacketConn, target net.Addr, src net.PacketConn, timeout 
 			copy(buf[len(srcAddr):], buf[:n])
 			copy(buf, srcAddr)
 			_, err = dst.WriteTo(buf[:len(srcAddr)+n], target)
+			recordUDPSent(int64(n))
 		case relayClient: // client -> user: strip original packet source
 			srcAddr := socks.SplitAddr(buf[:n])
 			_, err = dst.WriteTo(buf[len(srcAddr):n], target)

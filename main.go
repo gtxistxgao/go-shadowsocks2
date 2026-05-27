@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"crypto/rand"
 	"encoding/base64"
 	"flag"
@@ -23,23 +24,31 @@ var config struct {
 	UDPTimeout time.Duration
 }
 
+type multiFlag []string
+
+func (f *multiFlag) String() string  { return strings.Join(*f, ", ") }
+func (f *multiFlag) Set(v string) error { *f = append(*f, v); return nil }
+
 func main() {
 
 	var flags struct {
-		Client     string
-		Server     string
-		Cipher     string
-		Key        string
-		Password   string
-		Keygen     int
-		Socks      string
-		RedirTCP   string
-		RedirTCP6  string
-		TCPTun     string
-		UDPTun     string
-		UDPSocks   bool
-		Plugin     string
-		PluginOpts string
+		Client          string
+		Server          multiFlag
+		Cipher          string
+		Key             string
+		Password        string
+		Keygen          int
+		Socks           string
+		RedirTCP        string
+		RedirTCP6       string
+		TCPTun          string
+		UDPTun          string
+		UDPSocks        bool
+		Plugin          string
+		PluginOpts      string
+		MetricsNode     string
+		MetricsEndpoint string
+		MetricsToken    string
 	}
 
 	flag.BoolVar(&config.Verbose, "verbose", false, "verbose mode")
@@ -47,7 +56,7 @@ func main() {
 	flag.StringVar(&flags.Key, "key", "", "base64url-encoded key (derive from password if empty)")
 	flag.IntVar(&flags.Keygen, "keygen", 0, "generate a base64url-encoded random key of given length in byte")
 	flag.StringVar(&flags.Password, "password", "", "password")
-	flag.StringVar(&flags.Server, "s", "", "server listen address or url")
+	flag.Var(&flags.Server, "s", "server listen address or url (can be repeated for multiple accounts)")
 	flag.StringVar(&flags.Client, "c", "", "client connect address or url")
 	flag.StringVar(&flags.Socks, "socks", "", "(client-only) SOCKS listen address")
 	flag.BoolVar(&flags.UDPSocks, "u", false, "(client-only) Enable UDP support for SOCKS")
@@ -58,6 +67,9 @@ func main() {
 	flag.StringVar(&flags.Plugin, "plugin", "", "Enable SIP003 plugin. (e.g., v2ray-plugin)")
 	flag.StringVar(&flags.PluginOpts, "plugin-opts", "", "Set SIP003 plugin options. (e.g., \"server;tls;host=mydomain.me\")")
 	flag.DurationVar(&config.UDPTimeout, "udptimeout", 5*time.Minute, "UDP tunnel timeout")
+	flag.StringVar(&flags.MetricsNode, "metrics", "", "node name for Grafana metrics (enables metrics export)")
+	flag.StringVar(&flags.MetricsEndpoint, "metrics-endpoint", "", "Grafana Cloud OTLP gRPC endpoint (e.g. tempo-prod-06-prod-eu-west-0.grafana.net:443)")
+	flag.StringVar(&flags.MetricsToken, "metrics-token", "", "Grafana Cloud Basic auth token (base64 encoded instanceID:apitoken)")
 	flag.Parse()
 
 	if flags.Keygen > 0 {
@@ -67,9 +79,20 @@ func main() {
 		return
 	}
 
-	if flags.Client == "" && flags.Server == "" {
+	if flags.Client == "" && len(flags.Server) == 0 {
 		flag.Usage()
 		return
+	}
+
+	if flags.MetricsNode != "" {
+		if flags.MetricsEndpoint == "" || flags.MetricsToken == "" {
+			log.Fatal("--metrics-endpoint and --metrics-token are required when --metrics is set")
+		}
+		shutdown, err := initMetrics(context.Background(), flags.MetricsNode, flags.MetricsEndpoint, flags.MetricsToken)
+		if err != nil {
+			log.Fatalf("failed to init metrics: %v", err)
+		}
+		defer shutdown(context.Background())
 	}
 
 	var key []byte
@@ -139,8 +162,8 @@ func main() {
 		}
 	}
 
-	if flags.Server != "" { // server mode
-		addr := flags.Server
+	for _, serverURL := range flags.Server {
+		addr := serverURL
 		cipher := flags.Cipher
 		password := flags.Password
 		var err error
