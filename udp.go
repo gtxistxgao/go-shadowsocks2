@@ -63,7 +63,7 @@ func udpLocal(laddr, server, target string, shadow func(net.PacketConn) net.Pack
 			}
 
 			pc = shadow(pc)
-			nm.Add(raddr, c, pc, relayClient)
+			nm.Add(raddr, c, pc, relayClient, "")
 		}
 
 		_, err = pc.WriteTo(buf[:len(tgt)+n], srvAddr)
@@ -108,7 +108,7 @@ func udpSocksLocal(laddr, server string, shadow func(net.PacketConn) net.PacketC
 			}
 			logf("UDP socks tunnel %s <-> %s <-> %s", laddr, server, socks.Addr(buf[3:]))
 			pc = shadow(pc)
-			nm.Add(raddr, c, pc, socksClient)
+			nm.Add(raddr, c, pc, socksClient, "")
 		}
 
 		_, err = pc.WriteTo(buf[3:n], srvAddr)
@@ -120,7 +120,7 @@ func udpSocksLocal(laddr, server string, shadow func(net.PacketConn) net.PacketC
 }
 
 // Listen on addr for encrypted packets and basically do UDP NAT.
-func udpRemote(addr string, shadow func(net.PacketConn) net.PacketConn) {
+func udpRemote(addr string, shadow func(net.PacketConn) net.PacketConn, account string) {
 	c, err := net.ListenPacket("udp", addr)
 	if err != nil {
 		logf("UDP remote listen error: %v", err)
@@ -140,7 +140,7 @@ func udpRemote(addr string, shadow func(net.PacketConn) net.PacketConn) {
 			continue
 		}
 
-		recordUDPReceived(int64(n))
+		recordUDPReceived(int64(n), account)
 		tgtAddr := socks.SplitAddr(buf[:n])
 		if tgtAddr == nil {
 			logf("failed to split target address from packet: %q", buf[:n])
@@ -163,7 +163,7 @@ func udpRemote(addr string, shadow func(net.PacketConn) net.PacketConn) {
 				continue
 			}
 
-			nm.Add(raddr, c, pc, remoteServer)
+			nm.Add(raddr, c, pc, remoteServer, account)
 		}
 
 		_, err = pc.WriteTo(payload, tgtUDPAddr) // accept only UDPAddr despite the signature
@@ -213,11 +213,11 @@ func (m *natmap) Del(key string) net.PacketConn {
 	return nil
 }
 
-func (m *natmap) Add(peer net.Addr, dst, src net.PacketConn, role mode) {
+func (m *natmap) Add(peer net.Addr, dst, src net.PacketConn, role mode, account string) {
 	m.Set(peer.String(), src)
 
 	go func() {
-		timedCopy(dst, peer, src, m.timeout, role)
+		timedCopy(dst, peer, src, m.timeout, role, account)
 		if pc := m.Del(peer.String()); pc != nil {
 			pc.Close()
 		}
@@ -225,7 +225,7 @@ func (m *natmap) Add(peer net.Addr, dst, src net.PacketConn, role mode) {
 }
 
 // copy from src to dst at target with read timeout
-func timedCopy(dst net.PacketConn, target net.Addr, src net.PacketConn, timeout time.Duration, role mode) error {
+func timedCopy(dst net.PacketConn, target net.Addr, src net.PacketConn, timeout time.Duration, role mode, account string) error {
 	buf := make([]byte, udpBufSize)
 
 	for {
@@ -241,7 +241,7 @@ func timedCopy(dst net.PacketConn, target net.Addr, src net.PacketConn, timeout 
 			copy(buf[len(srcAddr):], buf[:n])
 			copy(buf, srcAddr)
 			_, err = dst.WriteTo(buf[:len(srcAddr)+n], target)
-			recordUDPSent(int64(n))
+			recordUDPSent(int64(n), account)
 		case relayClient: // client -> user: strip original packet source
 			srcAddr := socks.SplitAddr(buf[:n])
 			_, err = dst.WriteTo(buf[len(srcAddr):n], target)

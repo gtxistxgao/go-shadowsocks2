@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetricgrpc"
 	"go.opentelemetry.io/otel/metric"
 	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
@@ -92,26 +93,27 @@ func initMetrics(ctx context.Context, nodeName, endpoint, token string) (func(co
 	return provider.Shutdown, nil
 }
 
-func recordTCPTraffic(downstream, upstream int64) {
+func recordTCPTraffic(downstream, upstream int64, account string) {
 	if mTCPBytesSent == nil {
 		return
 	}
 	ctx := context.Background()
-	mTCPBytesSent.Add(ctx, downstream)
-	mTCPBytesReceived.Add(ctx, upstream)
-	mTCPConnections.Add(ctx, 1)
+	opt := metric.WithAttributes(attribute.String("account", account))
+	mTCPBytesSent.Add(ctx, downstream, opt)
+	mTCPBytesReceived.Add(ctx, upstream, opt)
+	mTCPConnections.Add(ctx, 1, opt)
 }
 
-func recordUDPSent(n int64) {
+func recordUDPSent(n int64, account string) {
 	if mUDPBytesSent == nil {
 		return
 	}
-	mUDPBytesSent.Add(context.Background(), n)
+	mUDPBytesSent.Add(context.Background(), n, metric.WithAttributes(attribute.String("account", account)))
 }
 
-func recordUDPReceived(n int64) {
+func recordUDPReceived(n int64, account string) {
 	if mUDPBytesReceived == nil {
 		return
 	}
-	mUDPBytesReceived.Add(context.Background(), n)
+	mUDPBytesReceived.Add(context.Background(), n, metric.WithAttributes(attribute.String("account", account)))
 }

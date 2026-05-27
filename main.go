@@ -189,8 +189,12 @@ func main() {
 			log.Fatal(err)
 		}
 
-		go udpRemote(udpAddr, ciph.PacketConn)
-		go tcpRemote(addr, ciph.StreamConn)
+		account := password
+		if len(account) > 6 {
+			account = account[:6]
+		}
+		go udpRemote(udpAddr, ciph.PacketConn, account)
+		go tcpRemote(addr, ciph.StreamConn, account)
 	}
 
 	sigCh := make(chan os.Signal, 1)
