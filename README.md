@@ -14,6 +14,8 @@ GoDoc at https://godoc.org/github.com/shadowsocks/go-shadowsocks2/
 - [x] UDP tunneling (e.g. relay DNS packets)
 - [x] TCP tunneling (e.g. benchmark with iperf3)
 - [x] SIP003 plugins
+- [x] Multiple accounts on a single server
+- [x] Grafana Cloud metrics via OpenTelemetry OTLP
 
 
 ## Install
@@ -35,6 +37,15 @@ Start a server listening on port 8488 using `AEAD_CHACHA20_POLY1305` AEAD cipher
 
 ```sh
 go-shadowsocks2 -s 'ss://AEAD_CHACHA20_POLY1305:your-password@:8488' -verbose
+```
+
+To host multiple accounts on different ports, repeat the `-s` flag:
+
+```sh
+go-shadowsocks2 \
+    -s 'ss://AEAD_CHACHA20_POLY1305:password1@:8488' \
+    -s 'ss://AEAD_CHACHA20_POLY1305:password2@:8489' \
+    -verbose
 ```
 
 
@@ -95,6 +106,34 @@ Start iperf3 client to connect to the tunneld port instead
 ```sh
 iperf3 -c localhost -p 1090
 ```
+
+### Grafana Cloud Metrics
+
+The server can export traffic metrics to [Grafana Cloud](https://grafana.com/products/cloud/) via OpenTelemetry OTLP.
+
+The following counters are exported:
+
+| Metric | Description |
+|--------|-------------|
+| `ss.tcp.bytes_sent` | TCP bytes sent to clients (downstream) |
+| `ss.tcp.bytes_received` | TCP bytes received from clients (upstream) |
+| `ss.tcp.connections_total` | Total TCP connections handled |
+| `ss.udp.bytes_sent` | UDP bytes sent to clients (downstream) |
+| `ss.udp.bytes_received` | UDP bytes received from clients (upstream) |
+
+Start a server with metrics enabled:
+
+```sh
+go-shadowsocks2 -s 'ss://AEAD_CHACHA20_POLY1305:your-password@:8488' \
+    -metrics my-node-name \
+    -metrics-endpoint tempo-prod-06-prod-eu-west-0.grafana.net:443 \
+    -metrics-token <base64-encoded-instanceID:apitoken>
+```
+
+- `-metrics` — a name for this server instance, shown as `service.instance.id` in Grafana.
+- `-metrics-endpoint` — Grafana Cloud OTLP gRPC endpoint (host:port).
+- `-metrics-token` — Base64-encoded `instanceID:apitoken` for HTTP Basic authentication. Find these values in your Grafana Cloud stack under **Connections > OpenTelemetry**.
+
 
 ### SIP003 Plugins (Experimental)
 
